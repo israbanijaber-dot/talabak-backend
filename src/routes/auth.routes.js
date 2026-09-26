@@ -4,6 +4,7 @@ import { UsersRepo } from "../db/repo.js";
 import { signToken } from "../utils/jwt.js";
 import { asyncRoute } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
+import { isValidPhone } from "../utils/phone.js";
 
 const router = Router();
 
@@ -11,6 +12,15 @@ router.post("/register", asyncRoute(async (req, res) => {
   const { name, phone, email, password } = req.body;
   if (!name || !phone || !email || !password) {
     return res.status(400).json({ error: "الرجاء تعبئة جميع الحقول" });
+  }
+  if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+    return res.status(400).json({ error: "صيغة البريد الإلكتروني غير صحيحة" });
+  }
+  if (!isValidPhone(phone)) {
+    return res.status(400).json({ error: "رقم الهاتف غير صحيح — استخدم صيغة فلسطينية أو إسرائيلية مثل 0599123456" });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ error: "كلمة المرور يجب أن تكون 6 أحرف على الأقل" });
   }
   if (UsersRepo.byEmail(email)) {
     return res.status(409).json({ error: "هذا البريد الإلكتروني مستخدم بالفعل" });

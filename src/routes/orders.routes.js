@@ -2,6 +2,7 @@ import { Router } from "express";
 import { OrdersRepo, StoresRepo, ProductsRepo, UsersRepo, ReviewsRepo, DriversRepo } from "../db/repo.js";
 import { asyncRoute } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { isValidPhone } from "../utils/phone.js";
 
 const router = Router();
 
@@ -11,6 +12,9 @@ router.post("/", requireAuth, requireRole("customer"), asyncRoute(async (req, re
   const { storeId, items, address, phone, orderNotes } = req.body;
   if (!storeId || !Array.isArray(items) || items.length === 0 || !address || !phone) {
     return res.status(400).json({ error: "بيانات الطلب غير مكتملة" });
+  }
+  if (!isValidPhone(phone)) {
+    return res.status(400).json({ error: "رقم الهاتف غير صحيح — استخدم صيغة فلسطينية أو إسرائيلية مثل 0599123456" });
   }
   if (!AREAS.includes(address.area)) {
     return res.status(422).json({ error: "عذرًا، طلبك خارج نطاق التوصيل في عقربا." });

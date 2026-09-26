@@ -36,10 +36,22 @@ function mapOrder(row, items, history) {
 export const StoresRepo = {
   list() { return db.prepare("SELECT * FROM stores ORDER BY name").all().map(mapStore); },
   get(id) { return mapStore(db.prepare("SELECT * FROM stores WHERE id = ?").get(id)); },
+  create(p) {
+    const id = newId("s");
+    const now = Date.now();
+    db.prepare(`INSERT INTO stores (id, owner_id, name, category, description, cover, phone, address, delivery_fee, min_order, delivery_time, is_open, rating, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(id, p.ownerId || null, p.name, p.category, p.description || "", p.cover || "🏪", p.phone || "", p.address || "",
+           Number(p.deliveryFee) || 0, Number(p.minOrder) || 0, p.deliveryTime || "", 1, 5, now, now);
+    return this.get(id);
+  },
   update(id, patch) {
     const fields = [];
     const values = [];
-    const map = { isOpen: "is_open", deliveryFee: "delivery_fee", minOrder: "min_order", deliveryTime: "delivery_time" };
+    const map = {
+      isOpen: "is_open", deliveryFee: "delivery_fee", minOrder: "min_order", deliveryTime: "delivery_time",
+      name: "name", category: "category", phone: "phone", address: "address", cover: "cover", description: "description",
+    };
     for (const [key, col] of Object.entries(map)) {
       if (key in patch) { fields.push(`${col} = ?`); values.push(key === "isOpen" ? (patch[key] ? 1 : 0) : patch[key]); }
     }
@@ -47,6 +59,15 @@ export const StoresRepo = {
     values.push(Date.now(), id);
     db.prepare(`UPDATE stores SET ${fields.join(", ")}, updated_at = ? WHERE id = ?`).run(...values);
     return this.get(id);
+  },
+  hasOrders(id) { return db.prepare("SELECT COUNT(*) AS c FROM orders WHERE store_id = ?").get(id).c > 0; },
+  remove(id) {
+    const tx = db.transaction(() => {
+      db.prepare("DELETE FROM products WHERE store_id = ?").run(id);
+      db.prepare("DELETE FROM favorites WHERE store_id = ?").run(id);
+      db.prepare("DELETE FROM stores WHERE id = ?").run(id);
+    });
+    tx();
   },
 };
 
@@ -167,6 +188,11 @@ export const ReviewsRepo = {
 export const DriversRepo = {
   list() { return db.prepare("SELECT * FROM drivers").all(); },
   get(id) { return db.prepare("SELECT * FROM drivers WHERE id = ?").get(id); },
+  create({ name, phone }) {
+    const id = newId("d");
+    db.prepare("INSERT INTO drivers (id, name, phone, is_active, created_at) VALUES (?,?,?,1,?)").run(id, name, phone || "", Date.now());
+    return this.get(id);
+  },
   setActive(id, isActive) { db.prepare("UPDATE drivers SET is_active = ? WHERE id = ?").run(isActive ? 1 : 0, id); return this.get(id); },
 };
 
@@ -179,6 +205,25 @@ export const UsersRepo = {
     db.prepare(`INSERT INTO users (id, name, phone, email, password_hash, role, store_id, driver_id, is_active, created_at)
                 VALUES (?,?,?,?,?, 'customer', NULL, NULL, 1, ?)`)
       .run(id, name, phone, email.trim().toLowerCase(), passwordHash, Date.now());
+    return this.byId(id);
+  },
+  createStoreOwner({ name, phone, email, passwordHash, storeId }) {
+    const id = newId("u");
+    db.prepare(`INSERT INTO users (id, name, phone, email, password_hash, role, store_id, driver_id, is_active, created_at)
+                VALUES (?,?,?,?,?, 'store_owner', ?, NULL, 1, ?)`)
+      .run(id, name, phone || "", email.trim().toLowerCase(), passwordHash, storeId, Date.now());
+    return this.byId(id);
+  },
+  createDriverAccount({ name, phone, email, passwordHash, driverId }) {
+    const id = newId("u");
+    db.prepare(`INSERT INTO users (id, name, phone, email, password_hash, role, store_id, driver_id, is_active, created_at)
+                VALUES (?,?,?,?,?, 'driver', NULL, ?, 1, ?)`)
+      .run(id, name, phone || "", email.trim().toLowerCase(), passwordHash, driverId, Date.now());
+    return this.byId(id);
+  },
+  listCustomers() { return db.prepare("SELECT id, name, phone, email, is_active, created_at FROM users WHERE role = 'customer' ORDER BY created_at DESC").all(); },
+  setActive(id, isActive) {
+    db.prepare("UPDATE users SET is_active = ? WHERE id = ?").run(isActive ? 1 : 0, id);
     return this.byId(id);
   },
   toPublic(u) {
